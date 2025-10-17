@@ -1,63 +1,44 @@
 import streamlit as st
 import tensorflow as tf
 import numpy as np
-from tensorflow.keras.preprocessing import image
+from PIL import Image
 import os
 
-# === CONFIGURACIÓN ===
-MODEL_PATH = os.path.join("models", "EfficientNetB2.15.20.keras")
+st.title("♻️ Waste Classificator - EfficientNetB2")
 
-CLASS_NAMES = [
-    "BLUECardboardBriks",
-    "BLUEGlassBottles1",
-    "BLUEGlassBottles2",
-    "BLUEMetalDrinksTupper",
-    "BLUEPaperBook",
-    "BLUEPlastics1",
-    "BLUEPlastics2",
-    "BrownOrganico",
-    "GRAYThrash",
-    "SPECIALDropOff",
-    "SPECIALHHW",
-    "SPECIALMedicalOff",
-    "SPECIALTakeBackShop"
-]
-
-IMG_SIZE = (380, 380)  # tamaño usado al entrenar
-
-# === CARGAR MODELO CON CACHE ===
+# --- Cargar modelo ---
 @st.cache_resource
 def load_model():
-    model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+    model_path = os.path.join("models", "EfficientNetB2.15.20.keras")
+    model = tf.keras.models.load_model(model_path, compile=False)
     return model
 
-model = load_model()
+with st.spinner("Cargando modelo..."):
+    model = load_model()
+st.success("Modelo cargado correctamente ✅")
 
-# === INTERFAZ ===
-st.title("♻️ Clasificador de Residuos con EfficientNetB2")
-st.markdown(
-    """
-    Este modelo clasifica imágenes en 13 categorías de residuos:
-    **Blue (reciclables)**, **Gray (trash)**, **Brown (orgánico)** y **Special (HHW)**.
-    """
-)
+# --- Clases ---
+class_names = [
+    "BLUECardboardBriks", "BLUEGlassBottles1", "BLUEGlassBottles2",
+    "BLUEMetalDrinksTupper", "BLUEPaperBook", "BLUEPlastics1", "BLUEPlastics2",
+    "BrownOrganico", "GRAYThrash", "SPECIALDropOff", "SPECIALHHW",
+    "SPECIALMedicalOff", "SPECIALTakeBackShop"
+]
 
-uploaded_file = st.file_uploader("📸 Sube una imagen del residuo...", type=["jpg", "jpeg", "png"])
+# --- Subida de imagen ---
+uploaded_file = st.file_uploader("Sube una imagen para clasificar", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-    # Mostrar imagen
-    img = image.load_img(uploaded_file, target_size=IMG_SIZE)
-    st.image(img, caption="Imagen subida", use_container_width=True)
+    img = Image.open(uploaded_file).convert("RGB")
+    st.image(img, caption="Imagen subida", use_column_width=True)
 
-    # Preprocesamiento
-    img_array = image.img_to_array(img) / 255.0
-    img_array = np.expand_dims(img_array, axis=0)
+    # --- Preprocesamiento ---
+    img = img.resize((380, 380))
+    img_array = np.expand_dims(np.array(img) / 255.0, axis=0)
 
-    # Predicción
-    prediction = model.predict(img_array)
-    pred_idx = np.argmax(prediction)
-    pred_label = CLASS_NAMES[pred_idx]
-    confidence = np.max(prediction) * 100
+    # --- Predicción ---
+    preds = model.predict(img_array)
+    pred_class = class_names[np.argmax(preds)]
+    confidence = np.max(preds) * 100
 
-    # Mostrar resultado
-    st.success(f"**Predicción:** {pred_label} ({confidence:.2f}% de confianza)")
+    st.markdown(f"### 🧠 Predicción: **{pred_class}** ({confidence:.2f}% de confianza)")
