@@ -12,11 +12,8 @@ st.title("♻️ Waste Classificator - EfficientNetB2")
 MODEL_DIR = "models"
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-# --- Ruta y URL del modelo en Google Drive ---
-MODEL_PATH = os.path.join(MODEL_DIR, "EfficientNetB2.15.20.keras")
-# Sustituye <FILE_ID> por el ID de tu archivo en Drive
-# Puedes obtenerlo de la URL compartida: https://drive.google.com/file/d/<FILE_ID>/view?usp=sharing
-DRIVE_URL = "https://drive.google.com/uc?id=<FILE_ID>"
+MODEL_PATH = "models/EfficientNetB2_savedmodel"
+model = tf.keras.models.load_model(MODEL_PATH)
 
 # --- Descargar modelo si no existe ---
 if not os.path.exists(MODEL_PATH):
