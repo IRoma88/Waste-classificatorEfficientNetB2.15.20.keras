@@ -8,13 +8,13 @@ import os
 st.set_page_config(page_title="♻️ Waste Classificator", layout="centered")
 st.title("♻️ Waste Classificator - EfficientNetB2")
 
-# --- Ruta al modelo SavedModel ---
-MODEL_PATH = os.path.join("models", "EfficientNetB2_savedmodel")
+# --- Ruta al modelo .keras ---
+MODEL_PATH = os.path.join("models", "EfficientNetB2_final.keras")
 
 # --- Cargar modelo con caching de Streamlit ---
 @st.cache_resource
 def load_model():
-    model = tf.keras.models.load_model(MODEL_PATH)
+    model = tf.keras.models.load_model(MODEL_PATH, compile=False)
     return model
 
 with st.spinner("Cargando modelo..."):
