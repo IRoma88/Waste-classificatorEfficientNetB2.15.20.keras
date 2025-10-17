@@ -6,10 +6,10 @@ import os
 
 # Configuración de la página
 st.set_page_config(page_title="♻️ Waste Classificator", layout="centered")
-st.title("♻️ Waste Classificator - EfficientNetB2 (Stable)")
+st.title("♻️ Waste Classificator - EfficientNetB2 (SavedModel)")
 
-# --- Ruta al modelo .keras simple ---
-MODEL_PATH = os.path.join("models", "EfficientNetB2_simple.keras")
+# Ruta al modelo SavedModel
+MODEL_PATH = os.path.join("models", "EfficientNetB2_savedmodel")
 
 # --- Clases del dataset ---
 class_names = [
@@ -22,24 +22,27 @@ class_names = [
 # --- Subida de imagen ---
 uploaded_file = st.file_uploader("Sube una imagen para clasificar", type=["jpg", "jpeg", "png"])
 
-if uploaded_file is not None:
-    # Abrir y mostrar imagen
+if uploaded_file:
+    # Abrir y mostrar la imagen
     img = Image.open(uploaded_file).convert("RGB")
     st.image(img, caption="Imagen subida", use_container_width=True)
 
     # Preprocesamiento
-    IMG_SIZE = (224, 224)  # tamaño más pequeño para ahorrar memoria
+    IMG_SIZE = (224, 224)  # tamaño reducido para eficiencia
     img = img.resize(IMG_SIZE)
-    img_array = np.expand_dims(np.array(img) / 255.0, axis=0)
+    img_array = np.expand_dims(np.array(img)/255.0, axis=0).astype(np.float32)
 
-    # --- Cargar modelo solo al momento de la predicción ---
+    # --- Cargar modelo SavedModel ---
     with st.spinner("Cargando modelo..."):
-        model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+        model = tf.saved_model.load(MODEL_PATH)
     st.success("✅ Modelo cargado")
 
     # --- Predicción ---
-    preds = model.predict(img_array)
+    infer = model.signatures["serving_default"]  # función por defecto
+    preds_dict = infer(tf.constant(img_array))
+    preds = list(preds_dict.values())[0].numpy()  # convertir dict a array
+
     pred_class = class_names[np.argmax(preds)]
-    confidence = np.max(preds) * 100
+    confidence = np.max(preds)*100
 
     st.markdown(f"### 🧠 Predicción: **{pred_class}** ({confidence:.2f}% de confianza)")
