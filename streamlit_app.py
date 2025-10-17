@@ -20,7 +20,7 @@ st.write("Sube una imagen de residuo para clasificarlo / Upload a waste image to
 # --- CONFIGURACIÓN / CONFIGURATION ---
 MODEL_PATH = "models/EfficientNetB2_epochs15-20.keras"
 # URL CORREGIDA - usa el file ID de tu enlace
-MODEL_URL = "https://drive.google.com/uc?id=1PcSynIU3Od_82zdHOerJRx3NLyEYbAUH"
+MODEL_URL = "https://drive.google.com/file/d/1PcSynIU3Od_82zdHOerJRx3NLyEYbAUH/view?usp=sharing"
 IMG_SIZE = (380, 380)
 
 # Clases / Classes
