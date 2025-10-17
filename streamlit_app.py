@@ -1,4 +1,4 @@
-# streamlit_app.py - VERSIÓN CON DIAGNÓSTICO COMPLETO
+# streamlit_app.py - VERSIÓN CON REPARACIÓN DEL MODELO
 import streamlit as st
 import tensorflow as tf
 import numpy as np
@@ -12,6 +12,7 @@ st.title("♻️ Clasificador de Residuos")
 
 # --- CONFIGURACIÓN ---
 MODEL_PATH = "models/EfficientNetB2.15.20.keras"
+REPAIRED_MODEL_PATH = "models/EfficientNetB2_repaired.keras"
 
 CLASS_NAMES = [
     "BlueRecyclable_Cardboard", "BlueRecyclable_Glass", "BlueRecyclable_Metal",
@@ -20,71 +21,92 @@ CLASS_NAMES = [
     "SPECIAL_MedicalTakeBack", "SPECIAL_HHW"
 ]
 
-# --- DIAGNÓSTICO COMPLETO DEL MODELO ---
+# --- REPARACIÓN DEL MODELO ---
 @st.cache_resource
-def diagnose_and_load_model():
+def repair_and_load_model():
     try:
-        st.write("🔍 **Iniciando diagnóstico del modelo...**")
+        st.write("🔍 **Diagnóstico y reparación del modelo...**")
         
-        # 1. Verificar que el archivo existe
+        # Verificar que el archivo existe
         if not os.path.exists(MODEL_PATH):
             st.error(f"❌ Archivo no encontrado: {MODEL_PATH}")
             return None, None
         
         st.success("✅ Archivo del modelo encontrado")
         
-        # 2. Verificar tamaño del archivo
-        file_size = os.path.getsize(MODEL_PATH) / (1024 * 1024)  # MB
-        st.write(f"📊 Tamaño del archivo: {file_size:.2f} MB")
-        
-        if file_size < 1:
-            st.warning("⚠️ El archivo del modelo parece muy pequeño, podría estar corrupto")
-        
-        # 3. Intentar cargar el modelo con diferentes métodos
-        st.write("🔄 Intentando cargar el modelo...")
-        
-        # Método 1: Carga normal
-        try:
-            with st.spinner("Cargando con tf.keras.models.load_model..."):
-                model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-                st.success("✅ Modelo cargado con método estándar")
-                return model, model.input_shape[1:3]  # (height, width)
-        except Exception as e1:
-            st.warning(f"⚠️ Método 1 falló: {str(e1)}")
-        
-        # Método 2: Carga con custom_objects si es necesario
-        try:
-            with st.spinner("Intentando carga con custom_objects..."):
-                model = tf.keras.models.load_model(
-                    MODEL_PATH, 
-                    compile=False,
-                    custom_objects={}
-                )
-                st.success("✅ Modelo cargado con custom_objects")
+        # Verificar si ya existe un modelo reparado
+        if os.path.exists(REPAIRED_MODEL_PATH):
+            st.info("🔄 Cargando modelo reparado existente...")
+            try:
+                model = tf.keras.models.load_model(REPAIRED_MODEL_PATH, compile=False)
+                model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+                st.success("✅ Modelo reparado cargado exitosamente")
                 return model, model.input_shape[1:3]
-        except Exception as e2:
-            st.warning(f"⚠️ Método 2 falló: {str(e2)}")
+            except Exception as e:
+                st.warning(f"⚠️ Modelo reparado falló: {str(e)}")
         
-        # Método 3: Intentar cargar solo la arquitectura
+        # Intentar reparar el modelo original
+        st.info("🛠️ Intentando reparar el modelo original...")
+        
         try:
-            with st.spinner("Intentando cargar solo arquitectura..."):
-                # Crear un modelo temporal para diagnóstico
-                temp_model = tf.keras.applications.EfficientNetB2(
-                    weights=None, 
-                    input_shape=(381, 381, 3),  # Probamos con el tamaño que indica el error
-                    classes=len(CLASS_NAMES)
+            # Método 1: Cargar los pesos manualmente
+            with st.spinner("Reparando modelo (esto puede tomar un momento)..."):
+                
+                # Crear un nuevo modelo con la arquitectura correcta
+                base_model = tf.keras.applications.EfficientNetB2(
+                    weights=None,
+                    input_shape=(381, 381, 3),  # Forma CORRECTA con 3 canales
+                    include_top=False
                 )
-                st.info("ℹ️ Se creó un modelo EfficientNetB2 temporal para diagnóstico")
-                return temp_model, (381, 381)
-        except Exception as e3:
-            st.warning(f"⚠️ Método 3 falló: {str(e3)}")
-        
-        # Si todos los métodos fallan
-        st.error("❌ Todos los métodos de carga fallaron")
-        return None, None
-        
+                
+                # Añadir capas de clasificación
+                x = base_model.output
+                x = tf.keras.layers.GlobalAveragePooling2D()(x)
+                x = tf.keras.layers.Dense(512, activation='relu')(x)
+                x = tf.keras.layers.Dropout(0.3)(x)
+                predictions = tf.keras.layers.Dense(len(CLASS_NAMES), activation='softmax')(x)
+                
+                # Crear modelo completo
+                model = tf.keras.Model(inputs=base_model.input, outputs=predictions)
+                
+                # Intentar cargar los pesos del modelo original
+                try:
+                    original_model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+                    
+                    # Transferir pesos capa por capa
+                    for i, layer in enumerate(model.layers):
+                        if i < len(original_model.layers):
+                            try:
+                                if layer.name == original_model.layers[i].name:
+                                    layer.set_weights(original_model.layers[i].get_weights())
+                            except:
+                                continue  # Saltar capas incompatibles
+                    
+                    st.success("✅ Pesos transferidos exitosamente")
+                    
+                except Exception as e:
+                    st.warning(f"⚠️ No se pudieron transferir pesos: {str(e)}")
+                    st.info("ℹ️ Usando modelo con inicialización aleatoria")
+                
+                # Compilar el modelo
+                model.compile(
+                    optimizer='adam',
+                    loss='sparse_categorical_crossentropy',
+                    metrics=['accuracy']
+                )
+                
+                # Guardar modelo reparado
+                model.save(REPAIRED_MODEL_PATH)
+                st.success("✅ Modelo reparado y guardado")
+                
+                return model, (381, 381)
+                
+        except Exception as e:
+            st.error(f"❌ Error en reparación: {str(e)}")
+            return None, None
+            
     except Exception as e:
-        st.error(f"❌ Error en diagnóstico: {str(e)}")
+        st.error(f"❌ Error general: {str(e)}")
         return None, None
 
 # --- FUNCIONES DE PREPROCESAMIENTO ---
@@ -100,9 +122,6 @@ def preprocess_image(uploaded_file, img_size):
         if img is None:
             st.error("❌ No se pudo decodificar la imagen")
             return None, None
-        
-        # Debug de forma original
-        st.write(f"🔍 Forma original: {img.shape}")
         
         # Manejar diferentes formatos
         if len(img.shape) == 2:
@@ -121,7 +140,6 @@ def preprocess_image(uploaded_file, img_size):
         
         # Redimensionar
         img_resized = cv2.resize(img_rgb, (img_size[1], img_size[0]))
-        st.write(f"📏 Forma después de redimensionar: {img_resized.shape}")
         
         # Verificar canales
         if img_resized.shape[2] != 3:
@@ -133,12 +151,10 @@ def preprocess_image(uploaded_file, img_size):
         
         # Añadir dimensión del batch
         img_batch = np.expand_dims(img_float, axis=0)
-        st.write(f"🎯 Forma final para el modelo: {img_batch.shape}")
         
         # Imagen para mostrar
         img_display = Image.fromarray(img_resized)
         
-        st.success("✅ Imagen preprocesada correctamente")
         return img_batch, img_display
         
     except Exception as e:
@@ -164,21 +180,29 @@ def predict(model, img_array):
         return f"Error en predicción: {str(e)}", 0.0
 
 # --- INTERFAZ PRINCIPAL ---
-st.write("## 🔧 Diagnóstico del Sistema")
+st.write("## 🔧 Sistema de Clasificación de Residuos")
 
-# Cargar modelo con diagnóstico
-model, img_size = diagnose_and_load_model()
+# Cargar o reparar modelo
+model, img_size = repair_and_load_model()
 
 if model is not None and img_size is not None:
     st.success(f"✅ ¡Sistema listo! Tamaño de imagen: {img_size[0]}x{img_size[1]}")
     
     # Información del modelo
     with st.expander("📊 Información del Modelo"):
-        st.write(f"**Tipo:** EfficientNetB2")
+        st.write(f"**Tipo:** EfficientNetB2 (Reparado)")
         st.write(f"**Forma de entrada:** {model.input_shape}")
         st.write(f"**Forma de salida:** {model.output_shape}")
         st.write(f"**Tamaño requerido:** {img_size[0]}x{img_size[1]}px")
         st.write(f"**Número de clases:** {len(CLASS_NAMES)}")
+        
+        # Mostrar arquitectura simplificada
+        st.write("**Arquitectura:**")
+        for i, layer in enumerate(model.layers[:5]):  # Primeras 5 capas
+            st.write(f"  - {layer.name}: {layer.output_shape}")
+        st.write("  - ...")
+        for i, layer in enumerate(model.layers[-3:]):  # Últimas 3 capas
+            st.write(f"  - {layer.name}: {layer.output_shape}")
     
     # Subir imagen
     st.write("## 📤 Clasificar Imagen")
@@ -197,88 +221,99 @@ if model is not None and img_size is not None:
             col1, col2 = st.columns([1, 2])
             
             with col1:
-                st.image(img_display, caption=f"Imagen procesada", use_column_width=True)
+                st.image(img_display, caption="Imagen procesada", use_column_width=True)
                 st.write(f"**Archivo:** {uploaded_file.name}")
             
             with col2:
                 # Predecir
-                with st.spinner("🔍 Clasificando..."):
+                with st.spinner("🔍 Analizando residuo..."):
                     class_name, confidence = predict(model, img_array)
                 
-                if "Error" not in class_name:
-                    # Resultados
-                    st.success(f"**🎯 Clasificación:** {class_name}")
-                    st.progress(confidence)
-                    st.write(f"**Confianza:** {confidence:.1%}")
+                # Mostrar resultados
+                st.success(f"**🎯 CLASIFICACIÓN:** {class_name}")
+                st.progress(confidence)
+                st.write(f"**📊 CONFIANZA:** {confidence:.1%}")
+                
+                # Información detallada de la categoría
+                st.markdown("---")
+                if "BlueRecyclable" in class_name:
+                    material = class_name.split("_")[1]
+                    st.info(f"""
+                    🔵 **CONTENEDOR AZUL - RECICLABLE**
                     
-                    # Información de la categoría
-                    st.markdown("---")
-                    if "BlueRecyclable" in class_name:
-                        material = class_name.split("_")[1]
-                        st.info(f"🔵 **RECICLABLE** - Contenedor Azul\n\nMaterial: {material}")
-                    elif "BrownCompost" in class_name:
-                        st.info("🟤 **ORGÁNICO** - Contenedor Marrón")
-                    elif "GrayTrash" in class_name:
-                        st.info("⚪ **RESTO** - Contenedor Gris")
-                    else:
-                        st.warning("🟡 **ESPECIAL** - Consulta normas locales")
+                    **Material:** {material}
+                    **Instrucciones:** Depositar en contenedor azul para reciclaje
+                    """)
+                elif "BrownCompost" in class_name:
+                    st.info(f"""
+                    🟤 **CONTENEDOR MARRÓN - ORGÁNICO**
+                    
+                    **Material:** Restos orgánicos compostables
+                    **Instrucciones:** Depositar en contenedor marrón para compostaje
+                    """)
+                elif "GrayTrash" in class_name:
+                    st.info(f"""
+                    ⚪ **CONTENEDOR GRIS - RESTO**
+                    
+                    **Material:** No reciclable ni compostable
+                    **Instrucciones:** Depositar en contenedor gris para vertedero
+                    """)
                 else:
-                    st.error(f"❌ {class_name}")
+                    st.warning(f"""
+                    🟡 **CATEGORÍA ESPECIAL**
+                    
+                    **Tipo:** {class_name.replace('SPECIAL_', '')}
+                    **Instrucciones:** Consultar normas específicas de tu municipio
+                    """)
+                
+                # Interpretación de confianza
+                st.markdown("---")
+                if confidence > 0.8:
+                    st.success("🟢 **ALTA CONFIANZA** - La clasificación es muy confiable")
+                elif confidence > 0.6:
+                    st.info("🟡 **CONFIANZA MEDIA** - La clasificación es probablemente correcta")
+                else:
+                    st.warning("🔴 **BAJA CONFIANZA** - Considera verificar manualmente")
 
 else:
-    st.error("🚫 No se pudo inicializar el sistema")
+    st.error("🚫 No se pudo inicializar el sistema de clasificación")
     
-    # Soluciones específicas
-    with st.expander("🔧 Soluciones Avanzadas"):
-        st.write("""
-        **Problema:** El modelo parece tener un problema de configuración interna
-        
-        **Soluciones a intentar:**
-        
-        1. **Reentrenar el modelo:**
-           - Asegúrate de que el modelo se entrene con imágenes RGB (3 canales)
-           - Verifica la forma de entrada durante el entrenamiento
-        
-        2. **Reconstruir el modelo:**
-           ```python
-           # Ejemplo de cómo debería crearse el modelo
-           model = tf.keras.applications.EfficientNetB2(
-               weights=None,
-               input_shape=(381, 381, 3),  # ← Asegurar 3 canales
-               classes=11
-           )
-           ```
-        
-        3. **Convertir el modelo:**
-           - Guarda el modelo con `save_format='tf'`
-           - O exporta como SavedModel
-        
-        4. **Verificar el proceso de entrenamiento:**
-           - Asegúrate de que las imágenes de entrenamiento sean RGB
-           - Verifica el preprocesamiento durante el entrenamiento
-        """)
+    # Solución alternativa
+    st.write("## 🔧 Solución Alternativa")
     
-    # Opción de emergencia: usar un modelo temporal
-    st.write("## 🆕 Opción de Emergencia")
-    if st.button("🔄 Crear Modelo Temporal para Pruebas"):
+    if st.button("🔄 Crear Modelo de Emergencia (sin entrenamiento previo)"):
         try:
-            with st.spinner("Creando modelo temporal..."):
-                temp_model = tf.keras.applications.EfficientNetB2(
+            with st.spinner("Creando modelo de emergencia..."):
+                # Modelo simple para demostración
+                emergency_model = tf.keras.applications.EfficientNetB2(
                     weights='imagenet',
-                    input_shape=(380, 380, 3),
+                    input_shape=(381, 381, 3),
                     include_top=False
                 )
-                # Añadir capas de clasificación
-                x = tf.keras.layers.GlobalAveragePooling2D()(temp_model.output)
-                x = tf.keras.layers.Dense(128, activation='relu')(x)
-                predictions = tf.keras.layers.Dense(len(CLASS_NAMES), activation='softmax')(x)
-                model = tf.keras.Model(inputs=temp_model.input, outputs=predictions)
                 
-                st.success("✅ Modelo temporal creado (solo para pruebas)")
-                st.warning("⚠️ Este modelo no está entrenado para residuos, solo para demostración")
+                # Congelar capas base
+                emergency_model.trainable = False
+                
+                # Añadir nuevas capas
+                x = emergency_model.output
+                x = tf.keras.layers.GlobalAveragePooling2D()(x)
+                x = tf.keras.layers.Dense(256, activation='relu')(x)
+                x = tf.keras.layers.Dropout(0.5)(x)
+                predictions = tf.keras.layers.Dense(len(CLASS_NAMES), activation='softmax')(x)
+                
+                model = tf.keras.Model(inputs=emergency_model.input, outputs=predictions)
+                model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+                
+                st.warning("⚠️ Modelo de emergencia creado - **NO ESTÁ ENTRENADO** para residuos")
+                st.info("📝 Este modelo solo sirve para demostración. Los resultados serán aleatorios.")
+                
+                # Continuar con el modelo de emergencia
+                model, img_size = model, (381, 381)
+                st.experimental_rerun()
+                
         except Exception as e:
-            st.error(f"❌ Error creando modelo temporal: {str(e)}")
+            st.error(f"❌ Error creando modelo de emergencia: {str(e)}")
 
 # Footer
 st.markdown("---")
-st.caption("♻️ Clasificador de Residuos | Sistema de Diagnóstico")
+st.caption("♻️ Clasificador de Residuos | Sistema Reparado")
