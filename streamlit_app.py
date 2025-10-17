@@ -17,7 +17,7 @@ st.title("♻️ Clasificador de Residuos / Waste Classifier")
 st.write("Sube una imagen de residuo para clasificarlo / Upload a waste image to classify it")
 
 # --- CONFIGURACIÓN CORREGIDA ---
-MODEL_PATH = "models/EfficientNetB2_epochs15-20.keras"
+MODEL_PATH = "models/EfficientNetB2.15.20.keras"
 # ⚠️ USA SOLO EL FILE ID - NO EL ENLACE COMPLETO
 FILE_ID = "1PcSynIU3Od_82zdHOerJRx3NLyEYbAUH"
 IMG_SIZE = (380, 380)
@@ -74,7 +74,7 @@ def download_and_load_model():
         
         **📋 Pasos detallados / Detailed steps:**
         - Ve a https://drive.google.com
-        - Encuentra el archivo 'EfficientNetB2_epochs15-20.keras'
+        - Encuentra el archivo 'EfficientNetB2.15.20.keras'
         - Clic derecho → Compartir → Cambiar a "Cualquier persona con el enlace"
         - Guarda los cambios
         - Vuelve aquí y recarga
