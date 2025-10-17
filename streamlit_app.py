@@ -1,9 +1,10 @@
-# streamlit_app.py - VERSIÓN OPTIMIZADA PARA STREAMLIT
+# streamlit_app.py - VERSIÓN CORREGIDA
 import streamlit as st
 import tensorflow as tf
 import numpy as np
 from PIL import Image
 import os
+import cv2
 
 # Configuración
 st.set_page_config(page_title="Clasificador de Residuos", page_icon="♻️", layout="centered")
@@ -11,7 +12,7 @@ st.title("♻️ Clasificador de Residuos")
 
 # --- CONFIGURACIÓN ---
 MODEL_PATH = "models/EfficientNetB2.15.20.keras"
-IMG_SIZE = (380, 380)
+IMG_SIZE = (380, 380)  # EfficientNetB2 espera 380x380
 
 CLASS_NAMES = [
     "BlueRecyclable_Cardboard", "BlueRecyclable_Glass", "BlueRecyclable_Metal",
@@ -27,58 +28,110 @@ def load_model():
         # Verificar que el archivo existe
         if not os.path.exists(MODEL_PATH):
             st.error(f"❌ Archivo no encontrado: {MODEL_PATH}")
+            st.info("💡 Asegúrate de que el archivo del modelo esté en la carpeta 'models/'")
             return None
         
-        # Cargar con configuración específica para compatibilidad
+        # Cargar con configuración específica
         with st.spinner("🔄 Cargando modelo (puede tomar unos segundos)..."):
             model = tf.keras.models.load_model(
                 MODEL_PATH,
-                compile=False  # No compilar inicialmente
+                compile=False
             )
             
-            # Compilar manualmente si es necesario
+            # Compilar manualmente
             model.compile(
                 optimizer='adam',
                 loss='sparse_categorical_crossentropy',
                 metrics=['accuracy']
             )
         
-        st.success("✅ Modelo cargado exitosamente")
+        # Verificar la forma de entrada esperada
+        input_shape = model.input_shape
+        st.success(f"✅ Modelo cargado exitosamente")
+        st.info(f"📊 Forma de entrada esperada: {input_shape}")
+        
         return model
         
     except Exception as e:
         st.error(f"❌ Error cargando el modelo: {str(e)}")
-        st.info("💡 Esto puede ser un problema de compatibilidad de versiones de TensorFlow")
         return None
 
 # Cargar modelo
 model = load_model()
 
-# --- FUNCIONES DE PREPROCESAMIENTO ---
+# --- FUNCIONES DE PREPROCESAMIENTO CORREGIDAS ---
+def ensure_rgb(image):
+    """Garantiza que la imagen tenga 3 canales RGB"""
+    try:
+        # Convertir PIL Image a numpy array
+        if isinstance(image, Image.Image):
+            img_array = np.array(image)
+        else:
+            img_array = image
+            
+        # Manejar diferentes formatos de imagen
+        if len(img_array.shape) == 2:  # Escala de grises (H, W)
+            img_rgb = np.stack([img_array] * 3, axis=-1)
+            st.info("🔄 Imagen convertida de escala de grises a RGB")
+            
+        elif img_array.shape[2] == 1:  # Un solo canal (H, W, 1)
+            img_rgb = np.concatenate([img_array] * 3, axis=-1)
+            st.info("🔄 Imagen convertida de 1 canal a RGB")
+            
+        elif img_array.shape[2] == 4:  # RGBA (H, W, 4)
+            img_rgb = img_array[:, :, :3]  # Quitar canal alpha
+            st.info("🔄 Imagen convertida de RGBA a RGB")
+            
+        elif img_array.shape[2] == 3:  # Ya es RGB
+            img_rgb = img_array
+            
+        else:
+            st.warning(f"⚠️ Formato inesperado: {img_array.shape}")
+            # Intentar conversión por defecto
+            img_rgb = img_array[:, :, :3] if img_array.shape[2] > 3 else img_array
+            
+        return img_rgb
+        
+    except Exception as e:
+        st.error(f"❌ Error en conversión RGB: {e}")
+        return None
+
 def preprocess_image(uploaded_file):
-    """Preprocesa la imagen asegurando formato correcto"""
+    """Preprocesa la imagen asegurando formato correcto para EfficientNetB2"""
     try:
         # Abrir imagen
         img = Image.open(uploaded_file)
         
-        # Forzar conversión a RGB (3 canales)
+        # Convertir a RGB usando PIL (primer intento)
         if img.mode != 'RGB':
             img = img.convert('RGB')
-            st.info("🔄 Imagen convertida a RGB")
         
         # Redimensionar
         img_resized = img.resize(IMG_SIZE)
         
-        # Convertir a array y normalizar
-        img_array = np.array(img_resized, dtype=np.float32) / 255.0
+        # Convertir a array
+        img_array = np.array(img_resized, dtype=np.float32)
         
-        # Verificar forma
-        if img_array.shape != (*IMG_SIZE, 3):
-            st.warning(f"⚠️ Forma inesperada: {img_array.shape}")
+        # Garantizar 3 canales RGB
+        img_array = ensure_rgb(img_array)
+        if img_array is None:
+            return None, None
+        
+        # Normalizar a [0,1]
+        img_array = img_array / 255.0
+        
+        # Verificar forma final
+        expected_shape = (*IMG_SIZE, 3)
+        if img_array.shape != expected_shape:
+            st.warning(f"⚠️ Forma final: {img_array.shape}. Esperado: {expected_shape}")
+            # Forzar redimensionamiento si es necesario
+            if img_array.shape[:2] != IMG_SIZE:
+                img_array = tf.image.resize(img_array, IMG_SIZE).numpy()
         
         # Añadir dimensión del batch
         img_array = np.expand_dims(img_array, axis=0)
         
+        st.success(f"✅ Imagen procesada: {img_array.shape}")
         return img_array, img
         
     except Exception as e:
@@ -112,16 +165,17 @@ if model is not None:
     
     # Información del sistema
     with st.expander("📊 Información del Sistema"):
-        st.write(f"**Modelo:** EfficientNetB2 (54.4 MB)")
+        st.write(f"**Modelo:** EfficientNetB2")
+        st.write(f"**Forma de entrada:** {model.input_shape}")
         st.write(f"**Clases:** {len(CLASS_NAMES)} categorías")
         st.write(f"**Resolución:** {IMG_SIZE[0]}x{IMG_SIZE[1]} píxeles")
-        st.write(f"**Formato de entrada:** RGB (3 canales)")
+        st.write(f"**Canales:** RGB (3 canales)")
     
     # Uploader de imagen
     uploaded_file = st.file_uploader(
         "Sube una imagen de residuo para clasificar", 
-        type=["jpg", "jpeg", "png", "webp"],
-        help="Formatos soportados: JPG, JPEG, PNG, WEBP"
+        type=["jpg", "jpeg", "png", "webp", "bmp"],
+        help="Formatos soportados: JPG, JPEG, PNG, WEBP, BMP"
     )
     
     if uploaded_file is not None:
@@ -135,7 +189,7 @@ if model is not None:
             with col1:
                 st.image(img_display, caption="Imagen subida", use_column_width=True)
                 st.write(f"**Archivo:** {uploaded_file.name}")
-                st.write(f"**Tamaño procesado:** {img_array.shape}")
+                st.write(f"**Forma procesada:** {img_array.shape}")
             
             with col2:
                 # Realizar predicción
@@ -154,26 +208,18 @@ if model is not None:
                     st.markdown("---")
                     if "BlueRecyclable" in pred_class:
                         st.info("🔵 **CONTENEDOR AZUL - Reciclable**")
-                        st.write("Materiales reciclables: papel, cartón, vidrio, metales, plásticos")
+                        material = pred_class.split("_")[1]
+                        st.write(f"Material: {material} - Deposita en contenedor azul")
                     elif "BrownCompost" in pred_class:
                         st.info("🟤 **CONTENEDOR MARRÓN - Orgánico**")
-                        st.write("Restos de comida, frutas, verduras, materiales compostables")
+                        st.write("Restos de comida, frutas, verduras - Deposita en contenedor marrón")
                     elif "GrayTrash" in pred_class:
                         st.info("⚪ **CONTENEDOR GRIS - Resto**")
-                        st.write("Materiales no reciclables ni compostables")
+                        st.write("Materiales no reciclables - Deposita en contenedor gris")
                     elif "SPECIAL" in pred_class:
                         st.warning("🟡 **CATEGORÍA ESPECIAL**")
-                        st.write("Consulta las normas específicas de tu municipio")
+                        st.write("Consulta las normas específicas de tu municipio para este material")
                     
-                    # Interpretación de confianza
-                    st.markdown("---")
-                    if confidence > 0.8:
-                        st.success("🟢 **ALTA CONFIANZA** - Clasificación muy fiable")
-                    elif confidence > 0.6:
-                        st.info("🟡 **CONFIANZA MEDIA** - Clasificación probablemente correcta")
-                    else:
-                        st.warning("🔴 **BAJA CONFIANZA** - Considera verificar manualmente")
-                        
                 else:
                     st.error(f"❌ {pred_class}")
 
@@ -181,17 +227,26 @@ else:
     st.error("🚫 No se pudo inicializar el sistema de clasificación")
     
     # Información de solución de problemas
-    with st.expander("🔧 Solución de problemas"):
+    with st.expander("🔧 Solución de problemas - DETALLADO"):
         st.write("""
-        **Problemas comunes:**
-        - Incompatibilidad de versiones de TensorFlow
-        - Archivo de modelo corrupto
-        - Memoria insuficiente en Streamlit Cloud
+        **Problema específico detectado:**
+        - El modelo espera imágenes RGB (3 canales) pero recibe imágenes con 1 canal
         
-        **Soluciones:**
-        1. Verifica que el modelo esté en la carpeta `models/`
-        2. Asegúrate de que sea un archivo .keras válido
-        3. Recarga la aplicación
+        **Causas posibles:**
+        1. Imágenes en escala de grises o con formato incorrecto
+        2. Problema en el preprocesamiento de imágenes
+        3. Incompatibilidad de versiones de TensorFlow
+        
+        **Soluciones aplicadas:**
+        ✅ Conversión forzada a RGB
+        ✅ Verificación de canales de imagen
+        ✅ Manejo de diferentes formatos (RGBA, escala de grises)
+        ✅ Validación de forma de entrada
+        
+        **Si persiste el error:**
+        1. Verifica que el archivo del modelo esté completo
+        2. Prueba con diferentes imágenes
+        3. Verifica los logs de Streamlit Cloud para más detalles
         """)
 
 # Footer
