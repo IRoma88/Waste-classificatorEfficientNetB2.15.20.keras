@@ -1,4 +1,4 @@
-# streamlit_app.py
+# streamlit_app.py - VERSIÓN CORREGIDA
 import streamlit as st
 import tensorflow as tf
 import numpy as np
@@ -6,86 +6,99 @@ from PIL import Image
 import os
 import gdown
 
-# Configuración de página / Page configuration
+# Configuración de página
 st.set_page_config(
     page_title="Clasificador de Residuos / Waste Classifier",
     page_icon="♻️",
     layout="centered"
 )
 
-# Título bilingüe / Bilingual title
 st.title("♻️ Clasificador de Residuos / Waste Classifier")
 st.write("Sube una imagen de residuo para clasificarlo / Upload a waste image to classify it")
 
-# --- CONFIGURACIÓN / CONFIGURATION ---
+# --- CONFIGURACIÓN CORREGIDA ---
 MODEL_PATH = "models/EfficientNetB2_epochs15-20.keras"
-# URL CORREGIDA - usa el file ID de tu enlace
-MODEL_URL = "https://drive.google.com/file/d/1PcSynIU3Od_82zdHOerJRx3NLyEYbAUH/view?usp=sharing"
+# ⚠️ USA SOLO EL FILE ID - NO EL ENLACE COMPLETO
+FILE_ID = "1PcSynIU3Od_82zdHOerJRx3NLyEYbAUH"
 IMG_SIZE = (380, 380)
 
-# Clases / Classes
 CLASS_NAMES = [
-    "BlueRecyclable_Cardboard",
-    "BlueRecyclable_Glass", 
-    "BlueRecyclable_Metal",
-    "BlueRecyclable_Paper", 
-    "BlueRecyclable_Plastics",
-    "BrownCompost",
-    "GrayTrash",
-    "SPECIAL_DropOff",
-    "SPECIAL_TakeBackShop",
-    "SPECIAL_MedicalTakeBack",
-    "SPECIAL_HHW"
+    "BlueRecyclable_Cardboard", "BlueRecyclable_Glass", "BlueRecyclable_Metal",
+    "BlueRecyclable_Paper", "BlueRecyclable_Plastics", "BrownCompost",
+    "GrayTrash", "SPECIAL_DropOff", "SPECIAL_TakeBackShop", 
+    "SPECIAL_MedicalTakeBack", "SPECIAL_HHW"
 ]
 
-# --- CARGA DEL MODELO / MODEL LOADING ---
+# --- CARGA DEL MODELO CORREGIDA ---
 @st.cache_resource
 def download_and_load_model():
-    # Crear carpeta models si no existe
+    # Crear carpeta models
     os.makedirs("models", exist_ok=True)
     
-    # Descargar modelo si no existe localmente
-    if not os.path.exists(MODEL_PATH):
-        st.info("📥 Descargando modelo desde Google Drive... / Downloading model from Google Drive...")
+    # Si ya existe el modelo, cargarlo
+    if os.path.exists(MODEL_PATH):
         try:
-            gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
-            st.success("✅ Modelo descargado exitosamente / Model downloaded successfully")
-        except Exception as e:
-            st.error(f"❌ Error descargando modelo / Error downloading model: {e}")
-            return None
-    
-    # Cargar modelo
-    try:
-        with st.spinner("🔄 Cargando modelo... / Loading model..."):
             model = tf.keras.models.load_model(MODEL_PATH)
-        st.success("✅ Modelo cargado exitosamente / Model loaded successfully")
-        return model
+            st.success("✅ Modelo cargado desde caché / Model loaded from cache")
+            return model
+        except Exception as e:
+            st.warning(f"⚠️ Modelo corrupto, reintentando... / Corrupt model, retrying...")
+            os.remove(MODEL_PATH)
+    
+    # Descargar modelo
+    st.info("📥 Descargando modelo... / Downloading model...")
+    
+    try:
+        # ⚠️ FORMATO CORRECTO para gdown
+        url = f"https://drive.google.com/uc?id={FILE_ID}"
+        gdown.download(url, MODEL_PATH, quiet=False)
+        
+        # Verificar que se descargó
+        if os.path.exists(MODEL_PATH) and os.path.getsize(MODEL_PATH) > 0:
+            model = tf.keras.models.load_model(MODEL_PATH)
+            st.success("✅ Modelo descargado y cargado / Model downloaded and loaded")
+            return model
+        else:
+            st.error("❌ El archivo se descargó vacío / File downloaded empty")
+            return None
+            
     except Exception as e:
-        st.error(f"❌ Error cargando modelo / Error loading model: {e}")
+        st.error(f"""
+        ❌ Error descargando modelo / Error downloading model: {e}
+        
+        **🔧 SOLUCIÓN / SOLUTION:**
+        1. **Verifica que el archivo sea PÚBLICO** en Google Drive
+        2. **Haz clic derecho** → **Compartir** → **"Cualquier persona con el enlace"**
+        3. **Asegúrate** de que diga "Cualquier persona con el enlace" como "Lector"
+        4. **Recarga** esta aplicación / **Reload** this app
+        
+        **📋 Pasos detallados / Detailed steps:**
+        - Ve a https://drive.google.com
+        - Encuentra el archivo 'EfficientNetB2_epochs15-20.keras'
+        - Clic derecho → Compartir → Cambiar a "Cualquier persona con el enlace"
+        - Guarda los cambios
+        - Vuelve aquí y recarga
+        """)
         return None
 
-# Cargar modelo al inicio / Load model at startup
+# Cargar modelo
 model = download_and_load_model()
 
-# --- FUNCIONES / FUNCTIONS ---
+# --- FUNCIONES ---
 def preprocess_image(uploaded_file):
-    """Preprocesa la imagen para el modelo / Preprocess image for the model"""
     try:
         img = Image.open(uploaded_file)
         if img.mode != 'RGB':
             img = img.convert('RGB')
-        
         img_resized = img.resize(IMG_SIZE)
         img_array = np.array(img_resized) / 255.0
         img_array = np.expand_dims(img_array, axis=0)
-        
         return img_array, img
     except Exception as e:
         st.error(f"❌ Error procesando imagen / Error processing image: {e}")
         return None, None
 
 def predict(img_array):
-    """Realiza predicción con el modelo / Make prediction with the model"""
     try:
         preds = model.predict(img_array, verbose=0)
         class_id = np.argmax(preds, axis=1)[0]
@@ -94,128 +107,41 @@ def predict(img_array):
     except Exception as e:
         return f"Error: {str(e)}", 0.0
 
-# --- INTERFAZ PRINCIPAL / MAIN INTERFACE ---
+# --- INTERFAZ PRINCIPAL ---
 if model is not None:
-    st.success("✅ Modelo cargado - ¡Listo para clasificar! / Model loaded - Ready to classify!")
+    st.success("✅ ¡Listo para clasificar! / Ready to classify!")
     
-    # Información del modelo / Model information
-    with st.expander("📊 Información del Modelo / Model Information"):
-        st.write(f"**Arquitectura / Architecture:** EfficientNetB2")
-        st.write(f"**Épocas de entrenamiento / Training epochs:** 15-20")
-        st.write(f"**Tamaño de entrada / Input size:** 380x380 px")
-        st.write(f"**Clases / Classes:** {len(CLASS_NAMES)} categorías / categories")
-        
-        # Mostrar todas las clases / Show all classes
-        st.write("**Lista de clases / Class list:**")
-        for i, class_name in enumerate(CLASS_NAMES, 1):
-            st.write(f"{i}. {class_name}")
-    
-    # Uploader de imagen / Image uploader
     uploaded_file = st.file_uploader(
         "Sube una imagen / Upload an image", 
-        type=["jpg", "jpeg", "png", "webp"],
-        help="Formatos soportados / Supported formats: JPG, JPEG, PNG, WEBP"
+        type=["jpg", "jpeg", "png", "webp"]
     )
     
     if uploaded_file is not None:
-        # Procesar imagen / Process image
         img_array, img_display = preprocess_image(uploaded_file)
-        
         if img_array is not None:
-            # Mostrar imagen / Display image
             col1, col2 = st.columns([1, 2])
-            
             with col1:
-                st.image(img_display, caption="Imagen subida / Uploaded image", use_column_width=True)
-                
-                # Información de la imagen / Image information
-                st.write(f"**Nombre archivo / File name:** {uploaded_file.name}")
-                st.write(f"**Tipo / Type:** {uploaded_file.type}")
-                st.write(f"**Tamaño / Size:** {uploaded_file.size} bytes")
-            
+                st.image(img_display, use_column_width=True)
             with col2:
-                # Realizar predicción / Make prediction
                 with st.spinner("🔍 Clasificando... / Classifying..."):
                     pred_class, confidence = predict(img_array)
-                
                 if "Error" not in pred_class:
-                    # Mostrar resultados / Display results
-                    st.success(f"**🎯 Predicción / Prediction:** {pred_class}")
-                    
-                    # Barra de confianza / Confidence bar
+                    st.success(f"**🎯 Predicción:** {pred_class}")
                     st.progress(confidence)
-                    st.write(f"**📊 Confianza / Confidence:** {confidence*100:.2f}%")
-                    
-                    # Información de la categoría / Category information
-                    st.markdown("---")
+                    st.write(f"**📊 Confianza:** {confidence*100:.2f}%")
                     
                     if "BlueRecyclable" in pred_class:
-                        st.info("""
-                        🔵 **Contenedor Azul - Reciclable / Blue Container - Recyclable**
-                        
-                        Materiales como papel, cartón, vidrio, metales y plásticos /
-                        Materials like paper, cardboard, glass, metals and plastics
-                        """)
+                        st.info("🔵 **Contenedor Azul - Reciclable**")
                     elif "BrownCompost" in pred_class:
-                        st.info("""
-                        🟤 **Contenedor Marrón - Orgánico / Brown Container - Organic**
-                        
-                        Restos de comida, frutas, verduras y materiales compostables /
-                        Food scraps, fruits, vegetables and compostable materials
-                        """)
+                        st.info("🟤 **Contenedor Marrón - Orgánico**")
                     elif "GrayTrash" in pred_class:
-                        st.info("""
-                        ⚪ **Contenedor Gris - Resto / Gray Container - General Waste**
-                        
-                        Materiales no reciclables ni compostables /
-                        Non-recyclable and non-compostable materials
-                        """)
+                        st.info("⚪ **Contenedor Gris - Resto**")
                     elif "SPECIAL" in pred_class:
-                        st.warning("""
-                        🟡 **Categoría Especial / Special Category**
-                        
-                        Consulta las normas específicas de tu municipio para estos residuos /
-                        Check your municipality's specific rules for these wastes
-                        """)
-                    
-                    # Interpretación de la confianza / Confidence interpretation
-                    st.markdown("---")
-                    if confidence > 0.8:
-                        st.success("🟢 **Alta confianza / High confidence** - La clasificación es muy fiable / The classification is very reliable")
-                    elif confidence > 0.6:
-                        st.info("🟡 **Confianza media / Medium confidence** - La clasificación es probablemente correcta / The classification is probably correct")
-                    else:
-                        st.warning("🔴 **Baja confianza / Low confidence** - Considera verificar manualmente / Consider manual verification")
-                        
+                        st.warning("🟡 **Categoría Especial**")
                 else:
-                    st.error(f"❌ {pred_class}")
-
+                    st.error(pred_class)
 else:
-    st.error("🚫 No se pudo cargar el modelo. Revisa la configuración. / Could not load model. Check configuration.")
+    st.error("🚫 No se pudo cargar el modelo / Could not load model")
 
-# Sección de instrucciones / Instructions section
-with st.expander("ℹ️ Cómo usar / How to use"):
-    st.markdown("""
-    ### 📸 Instrucciones / Instructions:
-    
-    1. **Sube una imagen** / **Upload an image**: Haz clic en 'Browse files' o arrastra una imagen
-    2. **Espera el análisis** / **Wait for analysis**: El modelo procesará la imagen automáticamente
-    3. **Revisa los resultados** / **Check results**: Verás la categoría y nivel de confianza
-    
-    ### 💡 Consejos para mejores resultados / Tips for better results:
-    - Usa imágenes con buena iluminación / Use well-lit images
-    - Enfoca claramente el objeto / Focus clearly on the object
-    - Toma la foto sobre fondo neutro / Take photo on neutral background
-    - Evita imágenes borrosas o oscuras / Avoid blurry or dark images
-    
-    ### 🗑️ Sobre las categorías / About categories:
-    - **🔵 Azul/Blue**: Reciclables / Recyclables
-    - **🟤 Marrón/Brown**: Orgánico / Organic
-    - **⚪ Gris/Gray**: Resto / General waste
-    - **🟡 Especial/Special**: Residuos específicos / Specific wastes
-    """)
-
-# Footer
 st.markdown("---")
-st.caption("♻️ Clasificador de Residuos con EfficientNetB2 | Waste Classifier with EfficientNetB2")
-st.caption("Desarrollado con TensorFlow y Streamlit / Developed with TensorFlow and Streamlit")
+st.caption("♻️ Clasificador de Residuos | Waste Classifier")
