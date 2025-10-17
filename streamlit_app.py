@@ -17,7 +17,7 @@ st.title("♻️ Clasificador de Residuos / Waste Classifier")
 st.write("Sube una imagen de residuo para clasificarlo / Upload a waste image to classify it")
 
 # --- CONFIGURACIÓN / CONFIGURATION ---
-MODEL_PATH = "models/EfficientNetB2_epochs15-20.keras"
+MODEL_PATH = "https://colab.research.google.com/drive/1RptaxIUmgYUrZENG-KKWMhxvwozpVwdZ?usp=sharing"
 IMG_SIZE = (380, 380)
 
 # Clases / Classes (AJUSTA SEGÚN TU ENTRENAMIENTO / ADJUST ACCORDING TO YOUR TRAINING)
