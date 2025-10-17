@@ -1,4 +1,4 @@
-# streamlit_app.py - VERSIÓN CORREGIDA
+# streamlit_app.py - VERSIÓN DEFINITIVA
 import streamlit as st
 import tensorflow as tf
 import numpy as np
@@ -21,35 +21,20 @@ CLASS_NAMES = [
     "SPECIAL_MedicalTakeBack", "SPECIAL_HHW"
 ]
 
-# --- CARGA OPTIMIZADA DEL MODELO ---
+# --- CARGA DEL MODELO ---
 @st.cache_resource
 def load_model():
     try:
-        # Verificar que el archivo existe
         if not os.path.exists(MODEL_PATH):
             st.error(f"❌ Archivo no encontrado: {MODEL_PATH}")
-            st.info("💡 Asegúrate de que el archivo del modelo esté en la carpeta 'models/'")
             return None
         
-        # Cargar con configuración específica
-        with st.spinner("🔄 Cargando modelo (puede tomar unos segundos)..."):
-            model = tf.keras.models.load_model(
-                MODEL_PATH,
-                compile=False
-            )
-            
-            # Compilar manualmente
-            model.compile(
-                optimizer='adam',
-                loss='sparse_categorical_crossentropy',
-                metrics=['accuracy']
-            )
+        with st.spinner("🔄 Cargando modelo..."):
+            model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+            model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
         
-        # Verificar la forma de entrada esperada
-        input_shape = model.input_shape
-        st.success(f"✅ Modelo cargado exitosamente")
-        st.info(f"📊 Forma de entrada esperada: {input_shape}")
-        
+        st.success("✅ Modelo cargado exitosamente")
+        st.info(f"📊 Forma de entrada esperada: {model.input_shape}")
         return model
         
     except Exception as e:
@@ -59,196 +44,160 @@ def load_model():
 # Cargar modelo
 model = load_model()
 
-# --- FUNCIONES DE PREPROCESAMIENTO CORREGIDAS ---
-def ensure_rgb(image):
-    """Garantiza que la imagen tenga 3 canales RGB"""
-    try:
-        # Convertir PIL Image a numpy array
-        if isinstance(image, Image.Image):
-            img_array = np.array(image)
-        else:
-            img_array = image
-            
-        # Manejar diferentes formatos de imagen
-        if len(img_array.shape) == 2:  # Escala de grises (H, W)
-            img_rgb = np.stack([img_array] * 3, axis=-1)
-            st.info("🔄 Imagen convertida de escala de grises a RGB")
-            
-        elif img_array.shape[2] == 1:  # Un solo canal (H, W, 1)
-            img_rgb = np.concatenate([img_array] * 3, axis=-1)
-            st.info("🔄 Imagen convertida de 1 canal a RGB")
-            
-        elif img_array.shape[2] == 4:  # RGBA (H, W, 4)
-            img_rgb = img_array[:, :, :3]  # Quitar canal alpha
-            st.info("🔄 Imagen convertida de RGBA a RGB")
-            
-        elif img_array.shape[2] == 3:  # Ya es RGB
-            img_rgb = img_array
-            
-        else:
-            st.warning(f"⚠️ Formato inesperado: {img_array.shape}")
-            # Intentar conversión por defecto
-            img_rgb = img_array[:, :, :3] if img_array.shape[2] > 3 else img_array
-            
-        return img_rgb
-        
-    except Exception as e:
-        st.error(f"❌ Error en conversión RGB: {e}")
-        return None
+# --- FUNCIONES DE PREPROCESAMIENTO MEJORADAS ---
+def force_3_channels(image_array):
+    """Fuerza la imagen a tener exactamente 3 canales RGB"""
+    # Debug: mostrar forma original
+    st.write(f"🔍 Forma original de la imagen: {image_array.shape}")
+    
+    if len(image_array.shape) == 2:
+        # Escala de grises -> RGB
+        st.info("🔄 Convirtiendo escala de grises a RGB")
+        return np.stack([image_array] * 3, axis=-1)
+    
+    elif image_array.shape[2] == 1:
+        # 1 canal -> RGB
+        st.info("🔄 Convirtiendo 1 canal a RGB")
+        return np.concatenate([image_array] * 3, axis=-1)
+    
+    elif image_array.shape[2] == 4:
+        # RGBA -> RGB (con fondo blanco)
+        st.info("🔄 Convirtiendo RGBA a RGB")
+        rgb = image_array[:, :, :3]
+        alpha = image_array[:, :, 3:4] / 255.0
+        white_bg = np.ones_like(rgb) * 255
+        result = (rgb * alpha + white_bg * (1 - alpha)).astype(np.uint8)
+        return result
+    
+    elif image_array.shape[2] == 3:
+        # Ya es RGB
+        return image_array
+    
+    else:
+        # Formato desconocido, tomar primeros 3 canales
+        st.warning(f"⚠️ Formato inesperado: {image_array.shape}, tomando primeros 3 canales")
+        return image_array[:, :, :3]
 
 def preprocess_image(uploaded_file):
-    """Preprocesa la imagen asegurando formato correcto para EfficientNetB2"""
+    """Preprocesamiento robusto que garantiza 3 canales"""
     try:
-        # Abrir imagen
-        img = Image.open(uploaded_file)
+        # Leer imagen
+        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_UNCHANGED)
         
-        # Convertir a RGB usando PIL (primer intento)
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
-        
-        # Redimensionar
-        img_resized = img.resize(IMG_SIZE)
-        
-        # Convertir a array
-        img_array = np.array(img_resized, dtype=np.float32)
-        
-        # Garantizar 3 canales RGB
-        img_array = ensure_rgb(img_array)
-        if img_array is None:
+        if img is None:
+            st.error("❌ No se pudo decodificar la imagen")
             return None, None
         
-        # Normalizar a [0,1]
-        img_array = img_array / 255.0
+        st.write(f"📐 Forma después de cv2.imdecode: {img.shape}")
+        
+        # OpenCV lee en BGR, convertir a RGB
+        if len(img.shape) == 3 and img.shape[2] >= 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        # Forzar 3 canales
+        img_rgb = force_3_channels(img)
+        st.write(f"🎯 Forma después de forzar RGB: {img_rgb.shape}")
+        
+        # Redimensionar
+        img_resized = cv2.resize(img_rgb, IMG_SIZE)
+        st.write(f"📏 Forma después de redimensionar: {img_resized.shape}")
+        
+        # Convertir a float32 y normalizar
+        img_float = img_resized.astype(np.float32) / 255.0
         
         # Verificar forma final
-        expected_shape = (*IMG_SIZE, 3)
-        if img_array.shape != expected_shape:
-            st.warning(f"⚠️ Forma final: {img_array.shape}. Esperado: {expected_shape}")
-            # Forzar redimensionamiento si es necesario
-            if img_array.shape[:2] != IMG_SIZE:
-                img_array = tf.image.resize(img_array, IMG_SIZE).numpy()
+        if img_float.shape != (*IMG_SIZE, 3):
+            st.error(f"❌ Forma final incorrecta: {img_float.shape}. Esperado: {(*IMG_SIZE, 3)}")
+            return None, None
         
         # Añadir dimensión del batch
-        img_array = np.expand_dims(img_array, axis=0)
+        img_batch = np.expand_dims(img_float, axis=0)
+        st.success(f"✅ Preprocesamiento completado. Forma final: {img_batch.shape}")
         
-        st.success(f"✅ Imagen procesada: {img_array.shape}")
-        return img_array, img
+        # Crear imagen para mostrar
+        img_display = Image.fromarray(img_resized.astype(np.uint8))
+        
+        return img_batch, img_display
         
     except Exception as e:
-        st.error(f"❌ Error procesando imagen: {e}")
+        st.error(f"❌ Error en preprocesamiento: {str(e)}")
         return None, None
 
 def predict(img_array):
-    """Realiza predicción con manejo de errores"""
+    """Realiza predicción"""
     try:
-        # Verificar forma de entrada
-        expected_shape = (1, 380, 380, 3)
-        if img_array.shape != expected_shape:
-            st.error(f"❌ Forma incorrecta: {img_array.shape}. Esperado: {expected_shape}")
-            return "Error: Formato de imagen incorrecto", 0.0
+        # Verificar forma
+        if img_array.shape != (1, 380, 380, 3):
+            st.error(f"❌ Forma incorrecta para predicción: {img_array.shape}")
+            return "Error: Forma de imagen incorrecta", 0.0
         
-        # Realizar predicción
-        preds = model.predict(img_array, verbose=0)
+        # Predicción
+        predictions = model.predict(img_array, verbose=0)
+        class_idx = np.argmax(predictions[0])
+        confidence = float(predictions[0][class_idx])
         
-        # Obtener resultados
-        class_id = np.argmax(preds, axis=1)[0]
-        confidence = float(np.max(preds))
-        
-        return CLASS_NAMES[class_id], confidence
+        return CLASS_NAMES[class_idx], confidence
         
     except Exception as e:
         return f"Error en predicción: {str(e)}", 0.0
 
 # --- INTERFAZ PRINCIPAL ---
 if model is not None:
-    st.success("✅ ¡Sistema listo para clasificar residuos!")
+    st.success("✅ ¡Sistema listo para clasificar!")
     
     # Información del sistema
-    with st.expander("📊 Información del Sistema"):
+    with st.expander("📊 Información Técnica"):
         st.write(f"**Modelo:** EfficientNetB2")
-        st.write(f"**Forma de entrada:** {model.input_shape}")
-        st.write(f"**Clases:** {len(CLASS_NAMES)} categorías")
-        st.write(f"**Resolución:** {IMG_SIZE[0]}x{IMG_SIZE[1]} píxeles")
-        st.write(f"**Canales:** RGB (3 canales)")
+        st.write(f"**Entrada esperada:** {model.input_shape}")
+        st.write(f"**Tamaño imagen:** {IMG_SIZE}")
+        st.write(f"**Clases:** {len(CLASS_NAMES)}")
     
-    # Uploader de imagen
+    # Subir imagen
     uploaded_file = st.file_uploader(
-        "Sube una imagen de residuo para clasificar", 
-        type=["jpg", "jpeg", "png", "webp", "bmp"],
-        help="Formatos soportados: JPG, JPEG, PNG, WEBP, BMP"
+        "Sube una imagen de residuo", 
+        type=["jpg", "jpeg", "png", "webp", "bmp"]
     )
     
     if uploaded_file is not None:
-        # Procesar imagen
+        # Preprocesar
         img_array, img_display = preprocess_image(uploaded_file)
         
         if img_array is not None:
-            # Mostrar en dos columnas
+            # Mostrar resultados
             col1, col2 = st.columns([1, 2])
             
             with col1:
-                st.image(img_display, caption="Imagen subida", use_column_width=True)
+                st.image(img_display, caption="Imagen procesada", use_column_width=True)
                 st.write(f"**Archivo:** {uploaded_file.name}")
-                st.write(f"**Forma procesada:** {img_array.shape}")
             
             with col2:
-                # Realizar predicción
-                with st.spinner("🔍 Analizando imagen..."):
-                    pred_class, confidence = predict(img_array)
+                # Predecir
+                with st.spinner("🔍 Clasificando..."):
+                    class_name, confidence = predict(img_array)
                 
-                if "Error" not in pred_class:
-                    # Mostrar resultados
-                    st.success(f"**🎯 CLASIFICACIÓN:** {pred_class}")
-                    
-                    # Barra de confianza
+                if "Error" not in class_name:
+                    # Resultados
+                    st.success(f"**🎯 Resultado:** {class_name}")
                     st.progress(confidence)
-                    st.write(f"**📊 CONFIANZA:** {confidence*100:.2f}%")
+                    st.write(f"**Confianza:** {confidence:.1%}")
                     
-                    # Información de la categoría
+                    # Información de categoría
                     st.markdown("---")
-                    if "BlueRecyclable" in pred_class:
-                        st.info("🔵 **CONTENEDOR AZUL - Reciclable**")
-                        material = pred_class.split("_")[1]
-                        st.write(f"Material: {material} - Deposita en contenedor azul")
-                    elif "BrownCompost" in pred_class:
-                        st.info("🟤 **CONTENEDOR MARRÓN - Orgánico**")
-                        st.write("Restos de comida, frutas, verduras - Deposita en contenedor marrón")
-                    elif "GrayTrash" in pred_class:
-                        st.info("⚪ **CONTENEDOR GRIS - Resto**")
-                        st.write("Materiales no reciclables - Deposita en contenedor gris")
-                    elif "SPECIAL" in pred_class:
-                        st.warning("🟡 **CATEGORÍA ESPECIAL**")
-                        st.write("Consulta las normas específicas de tu municipio para este material")
-                    
+                    if "BlueRecyclable" in class_name:
+                        st.info("🔵 **RECICLABLE** - Contenedor Azul")
+                    elif "BrownCompost" in class_name:
+                        st.info("🟤 **ORGÁNICO** - Contenedor Marrón")
+                    elif "GrayTrash" in class_name:
+                        st.info("⚪ **RESTO** - Contenedor Gris")
+                    else:
+                        st.warning("🟡 **ESPECIAL** - Consulta normas locales")
                 else:
-                    st.error(f"❌ {pred_class}")
+                    st.error(f"❌ {class_name}")
 
 else:
-    st.error("🚫 No se pudo inicializar el sistema de clasificación")
-    
-    # Información de solución de problemas
-    with st.expander("🔧 Solución de problemas - DETALLADO"):
-        st.write("""
-        **Problema específico detectado:**
-        - El modelo espera imágenes RGB (3 canales) pero recibe imágenes con 1 canal
-        
-        **Causas posibles:**
-        1. Imágenes en escala de grises o con formato incorrecto
-        2. Problema en el preprocesamiento de imágenes
-        3. Incompatibilidad de versiones de TensorFlow
-        
-        **Soluciones aplicadas:**
-        ✅ Conversión forzada a RGB
-        ✅ Verificación de canales de imagen
-        ✅ Manejo de diferentes formatos (RGBA, escala de grises)
-        ✅ Validación de forma de entrada
-        
-        **Si persiste el error:**
-        1. Verifica que el archivo del modelo esté completo
-        2. Prueba con diferentes imágenes
-        3. Verifica los logs de Streamlit Cloud para más detalles
-        """)
+    st.error("🚫 Sistema no disponible")
 
 # Footer
 st.markdown("---")
-st.caption("♻️ Clasificador de Residuos - EfficientNetB2 | Desarrollado con TensorFlow y Streamlit")
+st.caption("♻️ Clasificador de Residuos | EfficientNetB2")
