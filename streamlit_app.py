@@ -1,10 +1,9 @@
-# streamlit_app.py - VERSIÓN CORREGIDA
+# streamlit_app.py - VERSIÓN CORREGIDA PARA STREAMLIT CLOUD
 import streamlit as st
 import tensorflow as tf
 import numpy as np
 from PIL import Image
 import os
-import gdown
 
 # Configuración de página
 st.set_page_config(
@@ -17,9 +16,7 @@ st.title("♻️ Clasificador de Residuos / Waste Classifier")
 st.write("Sube una imagen de residuo para clasificarlo / Upload a waste image to classify it")
 
 # --- CONFIGURACIÓN CORREGIDA ---
-MODEL_PATH = "models/EfficientNetB2.15.20.keras"
-# ⚠️ USA SOLO EL FILE ID - NO EL ENLACE COMPLETO
-FILE_ID = "1PcSynIU3Od_82zdHOerJRx3NLyEYbAUH"
+MODEL_PATH = "models/EfficientNetB2.15.20.keras"  # ⚠️ ARCHIVO LOCAL, NO URL
 IMG_SIZE = (380, 380)
 
 CLASS_NAMES = [
@@ -29,60 +26,29 @@ CLASS_NAMES = [
     "SPECIAL_MedicalTakeBack", "SPECIAL_HHW"
 ]
 
-# --- CARGA DEL MODELO CORREGIDA ---
+# --- CARGA SIMPLE DEL MODELO LOCAL ---
 @st.cache_resource
-def download_and_load_model():
-    # Crear carpeta models
-    os.makedirs("models", exist_ok=True)
-    
-    # Si ya existe el modelo, cargarlo
-    if os.path.exists(MODEL_PATH):
-        try:
-            model = tf.keras.models.load_model(MODEL_PATH)
-            st.success("✅ Modelo cargado desde caché / Model loaded from cache")
-            return model
-        except Exception as e:
-            st.warning(f"⚠️ Modelo corrupto, reintentando... / Corrupt model, retrying...")
-            os.remove(MODEL_PATH)
-    
-    # Descargar modelo
-    st.info("📥 Descargando modelo... / Downloading model...")
-    
+def load_model():
     try:
-        # ⚠️ FORMATO CORRECTO para gdown
-        url = f"https://drive.google.com/uc?id={FILE_ID}"
-        gdown.download(url, MODEL_PATH, quiet=False)
-        
-        # Verificar que se descargó
-        if os.path.exists(MODEL_PATH) and os.path.getsize(MODEL_PATH) > 0:
-            model = tf.keras.models.load_model(MODEL_PATH)
-            st.success("✅ Modelo descargado y cargado / Model downloaded and loaded")
-            return model
-        else:
-            st.error("❌ El archivo se descargó vacío / File downloaded empty")
+        # Verificar que el archivo existe LOCALMENTE
+        if not os.path.exists(MODEL_PATH):
+            st.error(f"❌ Modelo no encontrado en: {MODEL_PATH}")
+            st.info("💡 El modelo debe estar en la carpeta 'models/' del repositorio")
             return None
-            
+        
+        # Cargar el modelo LOCAL
+        with st.spinner("🔄 Cargando modelo..."):
+            model = tf.keras.models.load_model(MODEL_PATH)
+        
+        st.success("✅ Modelo cargado exitosamente")
+        return model
+        
     except Exception as e:
-        st.error(f"""
-        ❌ Error descargando modelo / Error downloading model: {e}
-        
-        **🔧 SOLUCIÓN / SOLUTION:**
-        1. **Verifica que el archivo sea PÚBLICO** en Google Drive
-        2. **Haz clic derecho** → **Compartir** → **"Cualquier persona con el enlace"**
-        3. **Asegúrate** de que diga "Cualquier persona con el enlace" como "Lector"
-        4. **Recarga** esta aplicación / **Reload** this app
-        
-        **📋 Pasos detallados / Detailed steps:**
-        - Ve a https://drive.google.com
-        - Encuentra el archivo 'EfficientNetB2.15.20.keras'
-        - Clic derecho → Compartir → Cambiar a "Cualquier persona con el enlace"
-        - Guarda los cambios
-        - Vuelve aquí y recarga
-        """)
+        st.error(f"❌ Error cargando modelo: {e}")
         return None
 
 # Cargar modelo
-model = download_and_load_model()
+model = load_model()
 
 # --- FUNCIONES ---
 def preprocess_image(uploaded_file):
@@ -95,7 +61,7 @@ def preprocess_image(uploaded_file):
         img_array = np.expand_dims(img_array, axis=0)
         return img_array, img
     except Exception as e:
-        st.error(f"❌ Error procesando imagen / Error processing image: {e}")
+        st.error(f"❌ Error procesando imagen: {e}")
         return None, None
 
 def predict(img_array):
@@ -111,10 +77,13 @@ def predict(img_array):
 if model is not None:
     st.success("✅ ¡Listo para clasificar! / Ready to classify!")
     
-    uploaded_file = st.file_uploader(
-        "Sube una imagen / Upload an image", 
-        type=["jpg", "jpeg", "png", "webp"]
-    )
+    with st.expander("📊 Información del Modelo / Model Information"):
+        st.write(f"**Arquitectura:** EfficientNetB2")
+        st.write(f"**Clases:** {len(CLASS_NAMES)}")
+        st.write(f"**Tamaño entrada:** {IMG_SIZE}")
+        st.write("**Ubicación:** Archivo local en el repositorio")
+    
+    uploaded_file = st.file_uploader("Sube una imagen / Upload an image", type=["jpg", "jpeg", "png", "webp"])
     
     if uploaded_file is not None:
         img_array, img_display = preprocess_image(uploaded_file)
