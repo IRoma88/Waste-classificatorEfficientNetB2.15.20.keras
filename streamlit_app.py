@@ -4,6 +4,7 @@ import tensorflow as tf
 import numpy as np
 from PIL import Image
 import os
+import gdown
 
 # Configuración de página / Page configuration
 st.set_page_config(
@@ -17,10 +18,12 @@ st.title("♻️ Clasificador de Residuos / Waste Classifier")
 st.write("Sube una imagen de residuo para clasificarlo / Upload a waste image to classify it")
 
 # --- CONFIGURACIÓN / CONFIGURATION ---
-MODEL_PATH = "https://drive.google.com/file/d/1PcSynIU3Od_82zdHOerJRx3NLyEYbAUH/view?usp=sharing"
+MODEL_PATH = "models/EfficientNetB2_epochs15-20.keras"
+# URL CORREGIDA - usa el file ID de tu enlace
+MODEL_URL = "https://drive.google.com/uc?id=1PcSynIU3Od_82zdHOerJRx3NLyEYbAUH"
 IMG_SIZE = (380, 380)
 
-# Clases / Classes (AJUSTA SEGÚN TU ENTRENAMIENTO / ADJUST ACCORDING TO YOUR TRAINING)
+# Clases / Classes
 CLASS_NAMES = [
     "BlueRecyclable_Cardboard",
     "BlueRecyclable_Glass", 
@@ -37,22 +40,32 @@ CLASS_NAMES = [
 
 # --- CARGA DEL MODELO / MODEL LOADING ---
 @st.cache_resource
-def load_model():
-    if not os.path.exists(MODEL_PATH):
-        st.error(f"❌ Modelo no encontrado en / Model not found at: {MODEL_PATH}")
-        st.info("💡 Asegúrate de que el archivo del modelo esté en la carpeta 'models/' / Make sure the model file is in the 'models/' folder")
-        return None
+def download_and_load_model():
+    # Crear carpeta models si no existe
+    os.makedirs("models", exist_ok=True)
     
+    # Descargar modelo si no existe localmente
+    if not os.path.exists(MODEL_PATH):
+        st.info("📥 Descargando modelo desde Google Drive... / Downloading model from Google Drive...")
+        try:
+            gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
+            st.success("✅ Modelo descargado exitosamente / Model downloaded successfully")
+        except Exception as e:
+            st.error(f"❌ Error descargando modelo / Error downloading model: {e}")
+            return None
+    
+    # Cargar modelo
     try:
         with st.spinner("🔄 Cargando modelo... / Loading model..."):
             model = tf.keras.models.load_model(MODEL_PATH)
+        st.success("✅ Modelo cargado exitosamente / Model loaded successfully")
         return model
     except Exception as e:
         st.error(f"❌ Error cargando modelo / Error loading model: {e}")
         return None
 
 # Cargar modelo al inicio / Load model at startup
-model = load_model()
+model = download_and_load_model()
 
 # --- FUNCIONES / FUNCTIONS ---
 def preprocess_image(uploaded_file):
