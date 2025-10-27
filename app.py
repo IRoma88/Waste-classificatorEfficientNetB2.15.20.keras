@@ -16,8 +16,8 @@ st.title("♻️ Waste Classificator / Clasificador de Residuos - EfficientNetB2
 # --- Ruta al modelo SavedModel ---
 MODEL_PATH = os.path.join("models", "EfficientNetB2_savedmodel")
 
-# --- Clases del dataset ---
-class_names = [
+# --- Etiquetas internas (usadas por el modelo) ---
+internal_labels = [
     "BLUECardboardBriks", "BLUEGlassBottles1", "BLUEGlassBottles2",
     "BLUEMetalDrinksTupper", "BLUEPaperBook", "BLUEPlastics1", "BLUEPlastics2",
     "BrownOrganico", "GRAYThrash", "SPECIALDropOff", "SPECIALHHW",
@@ -47,19 +47,18 @@ def load_model():
     return tf.saved_model.load(MODEL_PATH)
 
 model = load_model()
-
-st.success("✅ Modelo cargado / Model loaded")
+st.success("✅ Modelo cargado correctamente / Model loaded successfully")
 
 # --- Subida de imagen / Image upload ---
 uploaded_file = st.file_uploader(
-    "Sube una imagen para clasificar / Upload an image to classify",
+    "📤 Sube una imagen para clasificar / Upload an image to classify",
     type=["jpg", "jpeg", "png"]
 )
 
 if uploaded_file:
     # Abrir y mostrar la imagen / Open and display the image
     img = Image.open(uploaded_file).convert("RGB")
-    st.image(img, caption="Imagen subida / Uploaded image", use_container_width=True)
+    st.image(img, caption="🖼️ Imagen subida / Uploaded image", use_container_width=True)
 
     # Preprocesamiento / Preprocessing
     IMG_SIZE = (380, 380)
@@ -68,12 +67,16 @@ if uploaded_file:
     img_array = preprocess_input(img_array)
 
     # --- Predicción / Prediction ---
-    with st.spinner("Prediciendo... / Predicting..."):
+    with st.spinner("🔍 Analizando imagen... / Analyzing image..."):
         infer = model.signatures["serving_default"]
         preds_dict = infer(tf.constant(img_array))
         preds = list(preds_dict.values())[0].numpy()
 
-        pred_class = display_labels[np.argmax(preds)]
+        pred_index = np.argmax(preds)
+        pred_class = display_labels[pred_index]
         confidence = np.max(preds) * 100
 
-    st.markdown(f"### 🧠 Predicción / Prediction: **{pred_class}** ({confidence:.2f}% de confianza / confidence)")
+    # --- Mostrar resultado / Display result ---
+    st.markdown(f"### 🧠 Predicción / Prediction: **{pred_class}**")
+    st.progress(float(confidence) / 100)
+    st.write(f"**Confianza / Confidence:** {confidence:.2f}%")
