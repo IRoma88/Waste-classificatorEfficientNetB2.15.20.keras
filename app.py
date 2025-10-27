@@ -73,7 +73,7 @@ if uploaded_file:
         preds_dict = infer(tf.constant(img_array))
         preds = list(preds_dict.values())[0].numpy()
 
-        pred_class = class_names[np.argmax(preds)]
+        pred_class = display_labels[np.argmax(preds)]
         confidence = np.max(preds) * 100
 
     st.markdown(f"### 🧠 Predicción / Prediction: **{pred_class}** ({confidence:.2f}% de confianza / confidence)")
