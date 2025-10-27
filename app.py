@@ -24,6 +24,23 @@ class_names = [
     "SPECIALMedicalOff", "SPECIALTakeBackShop"
 ]
 
+# --- Nombres legibles para la app (mismo orden que las etiquetas internas) ---
+display_labels = [
+    "♻️ Blue - Cardboard & Briks",
+    "♻️ Blue - Glass Bottles (Type 1)",
+    "♻️ Blue - Glass Bottles (Type 2)",
+    "♻️ Blue - Metal Cans & Tupperware",
+    "♻️ Blue - Paper & Books",
+    "♻️ Blue - Plastics (Type 1)",
+    "♻️ Blue - Plastics (Type 2)",
+    "🍃 Brown - Organic Waste",
+    "🗑️ Gray - General Trash",
+    "🏪 Take-Back Shop Items",
+    "⚠️ Hazardous Household Waste (HHW)",
+    "🏥 Medical Waste",
+    "📦 Drop-off Point Items"
+]
+
 # --- Precargar modelo (solo una vez) ---
 @st.cache_resource
 def load_model():
